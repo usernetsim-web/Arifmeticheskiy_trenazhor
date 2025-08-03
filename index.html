@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Голосная арифметика (однозначные числа)</title>
+<style>
+  body {
+    margin: 0; padding: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: #121212;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    user-select: none;
+  }
+  #container {
+    background: #222;
+    padding: 30px 40px;
+    border-radius: 15px;
+    box-shadow: 0 0 20px #0f9d58;
+    text-align: center;
+    width: 320px;
+    max-width: 90vw;
+  }
+  #problem {
+    font-size: 4rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    user-select: none;
+    transition: transform 0.8s ease, opacity 0.8s ease;
+  }
+  #status {
+    font-size: 1.2rem;
+    min-height: 30px;
+    margin-bottom: 20px;
+    color: #0f9d58;
+  }
+  #start-btn {
+    font-size: 1.2rem;
+    padding: 12px 25px;
+    border: none;
+    border-radius: 10px;
+    background: #0f9d58;
+    color: #fff;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 0 10px #0f9d58;
+    transition: background-color 0.3s ease;
+  }
+  #start-btn:hover:not(:disabled) {
+    background: #0c7a43;
+  }
+  #start-btn:disabled {
+    background: #555;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  #hint {
+    color: #f44336;
+    min-height: 24px;
+    margin-top: 10px;
+    font-weight: 600;
+  }
+  @keyframes explode {
+    0% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+      filter: brightness(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.5) rotate(20deg);
+      filter: brightness(1.5);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.1) rotate(90deg);
+      filter: brightness(0);
+    }
+  }
+  .explode {
+    animation: explode 0.8s forwards;
+  }
+</style>
+</head>
+<body>
+
+<div id="container">
+  <div id="problem">—</div>
+  <div id="status">Нажмите кнопку и скажите ответ</div>
+  <button id="start-btn">Начать</button>
+  <div id="hint"></div>
+</div>
+
+<!-- Звуки: выстрел и взрыв -->
+<audio id="shot-sound" preload="auto" src="https://actions.google.com/sounds/v1/weapons/pistol_shot.ogg"></audio>
+<audio id="explosion-sound" preload="auto" src="https://actions.google.com/sounds/v1/explosions/explosion.ogg"></audio>
+
+<script>
+(() => {
+  const problemEl = document.getElementById('problem');
+  const statusEl = document.getElementById('status');
+  const startBtn = document.getElementById('start-btn');
+  const hintEl = document.getElementById('hint');
+  const shotSound = document.getElementById('shot-sound');
+  const explosionSound = document.getElementById('explosion-sound');
+
+  let currentAnswer = null;
+  let recognition = null;
+  let listening = false;
+
+  // Генерация примера: сложение или вычитание, числа от 1 до 9
+  function generateProblem() {
+    const minNumber = 1;
+    const maxNumber = 9;
+
+    // Выбор операции
+    const op = Math.random() < 0.5 ? '+' : '-';
+
+    let a, b;
+    if (op === '+') {
+      a = randomInt(minNumber, maxNumber);
+      b = randomInt(minNumber, maxNumber);
+      currentAnswer = a + b;
+    } else {
+      a = randomInt(minNumber, maxNumber);
+      b = randomInt(minNumber, a);
+      currentAnswer = a - b;
+    }
+
+    return `${a} ${op} ${b} = ?`;
+  }
+
+  function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  // Инициализация SpeechRecognition
+  function initRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Ваш браузер не поддерживает распознавание речи. Пожалуйста, используйте Chrome или Edge.');
+      startBtn.disabled = true;
+      return null;
+    }
+    const recog = new SpeechRecognition();
+    recog.lang = 'ru-RU';
+    recog.interimResults = false;
+    recog.maxAlternatives = 1;
+    recog.continuous = false;
+    return recog;
+  }
+
+  function startListening() {
+    if (!recognition) return;
+    listening = true;
+    statusEl.textContent = 'Слушаю... Говорите ответ';
+    hintEl.textContent = '';
+    recognition.start();
+    startBtn.disabled = true;
+  }
+
+  function stopListening() {
+    if (!recognition) return;
+    listening = false;
+    recognition.stop();
+    startBtn.disabled = false;
+  }
+
+  function handleResult(event) {
+    if (!event.results || event.results.length === 0) {
+      statusEl.textContent = 'Не распознано. Попробуйте ещё раз.';
+      startBtn.disabled = false;
+      return;
+    }
+    const transcript = event.results[0][0].transcript.trim().toLowerCase();
+    statusEl.textContent = `Вы сказали: "${transcript}"`;
+    // Парсим число из речи
+    const userAnswer = parseSpokenNumber(transcript);
+    if (userAnswer === null) {
+      hintEl.textContent = 'Не удалось распознать число. Попробуйте сказать цифры или числа словами от нуля до девяти.';
+      startBtn.disabled = false;
+      return;
+    }
+    if (userAnswer === currentAnswer) {
+      // Правильно!
+      hintEl.textContent = '';
+      playShotAndExplosionAndNext();
+    } else {
+      hintEl.textContent = `Неверно. Попробуйте ещё раз.`;
+      startBtn.disabled = false;
+    }
+  }
+
+  // Парсер чисел из текста — цифры и слова от 0 до 9
+  function parseSpokenNumber(str) {
+    str = str.trim().toLowerCase();
+
+    // Словарь числительных 0–9
+    const numbersMap = {
+      'ноль': 0,
+      'один': 1,
+      'одна': 1,
+      'два': 2,
+      'две': 2,
+      'три': 3,
+      'четыре': 4,
+      'пять': 5,
+      'шесть': 6,
+      'семь': 7,
+      'восемь': 8,
+      'девять': 9,
+    };
+
+    // Попытка извлечь число из цифр (например, "7", "12" и т.п.)
+    const numFromDigits = Number(str.replace(/[^\d\-]/g, ''));
+    if (!Number.isNaN(numFromDigits) && str.match(/\d/)) {
+      return numFromDigits;
+    }
+
+    // Если слово есть в словаре — вернуть число
+    if (numbersMap.hasOwnProperty(str)) {
+      return numbersMap[str];
+    }
+
+    return null; // не распознано
+  }
+
+  function playShotAndExplosionAndNext() {
+    // Проигрываем выстрел
+    shotSound.currentTime = 0;
+    shotSound.play();
+
+    // Через 300 мс запускаем анимацию и звук взрыва
+    setTimeout(() => {
+      explosionSound.currentTime = 0;
+      explosionSound.play();
+      problemEl.classList.add('explode');
+    }, 300);
+
+    // После анимации сменить пример
+    setTimeout(() => {
+      problemEl.classList.remove('explode');
+      nextProblem();
+      statusEl.textContent = 'Нажмите кнопку и скажите ответ';
+      startBtn.disabled = false;
+    }, 1200);
+  }
+
+  function nextProblem() {
+    const prob = generateProblem();
+    problemEl.textContent = prob;
+  }
+
+  startBtn.addEventListener('click', () => {
+    if (listening) {
+      stopListening();
+      statusEl.textContent = 'Распознавание остановлено.';
+      startBtn.textContent = 'Начать';
+    } else {
+      startListening();
+      startBtn.textContent = 'Остановить';
+    }
+  });
+
+  recognition = initRecognition();
+  if (recognition) {
+    recognition.addEventListener('result', handleResult);
+    recognition.addEventListener('error', e => {
+      statusEl.textContent = 'Ошибка распознавания: ' + e.error;
+      startBtn.disabled = false;
+      listening = false;
+      startBtn.textContent = 'Начать';
+    });
+    recognition.addEventListener('end', () => {
+      if (listening) {
+        recognition.start();
+      }
+    });
+  }
+
+  nextProblem();
+})();
+</script>
+
+</body>
+</html>
