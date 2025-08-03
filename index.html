@@ -126,7 +126,10 @@
   let recognition = null;
   let listening = false;
 
-  // Генерация примера: сложение или вычитание, числа от 1 до 9
+  function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
   function generateProblem() {
     const minNumber = 1;
     const maxNumber = 9;
@@ -147,11 +150,6 @@
     return `${a} ${op} ${b} = ?`;
   }
 
-  function randomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
-
-  // Инициализация SpeechRecognition
   function initRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -163,7 +161,7 @@
     recog.lang = 'ru-RU';
     recog.interimResults = false;
     recog.maxAlternatives = 1;
-    recog.continuous = false;
+    recog.continuous = true; // Включаем непрерывный режим
     return recog;
   }
 
@@ -172,10 +170,14 @@
     listening = true;
     statusEl.textContent = 'Слушаю... Говорите ответ';
     hintEl.textContent = '';
-    recognition.start();
     startBtn.textContent = 'Остановить';
     startBtn.setAttribute('aria-pressed', 'true');
     startBtn.disabled = false;
+    try {
+      recognition.start();
+    } catch (e) {
+      // Иногда start() может выбросить ошибку, если уже запущено
+    }
   }
 
   function stopListening() {
@@ -188,31 +190,7 @@
     statusEl.textContent = 'Распознавание остановлено.';
   }
 
-  function handleResult(event) {
-    if (!event.results || event.results.length === 0) {
-      statusEl.textContent = 'Не распознано. Попробуйте ещё раз.';
-      startBtn.disabled = false;
-      return;
-    }
-    const transcript = event.results[0][0].transcript.trim().toLowerCase();
-    statusEl.textContent = `Вы сказали: "${transcript}"`;
-
-    const userAnswer = parseSpokenNumber(transcript);
-    if (userAnswer === null) {
-      hintEl.textContent = 'Не удалось распознать число. Попробуйте сказать цифры или числа словами от нуля до девяти.';
-      startBtn.disabled = false;
-      return;
-    }
-    if (userAnswer === currentAnswer) {
-      hintEl.textContent = '';
-      playShotAndExplosionAndNext();
-    } else {
-      hintEl.textContent = `Неверно. Попробуйте ещё раз.`;
-      startBtn.disabled = false;
-    }
-  }
-
-  // Парсер чисел из текста — цифры и слова от 0 до 9
+  // Преобразуем распознанный текст в число (цифра или слово)
   function parseSpokenNumber(str) {
     str = str.trim().toLowerCase();
 
@@ -231,11 +209,14 @@
       'девять': 9,
     };
 
-    const numFromDigits = Number(str.replace(/[^\d\-]/g, ''));
-    if (!Number.isNaN(numFromDigits) && str.match(/\d/)) {
-      return numFromDigits;
+    // Попытка извлечь число из цифр
+    const digitsMatch = str.match(/\d+/);
+    if (digitsMatch) {
+      const num = Number(digitsMatch[0]);
+      if (!Number.isNaN(num)) return num;
     }
 
+    // Если полное слово совпадает
     if (numbersMap.hasOwnProperty(str)) {
       return numbersMap[str];
     }
@@ -258,7 +239,6 @@
       nextProblem();
       statusEl.textContent = 'Нажмите кнопку и скажите ответ';
       hintEl.textContent = '';
-      startBtn.disabled = false;
     }, 1200);
   }
 
@@ -277,17 +257,56 @@
 
   recognition = initRecognition();
   if (recognition) {
-    recognition.addEventListener('result', handleResult);
-    recognition.addEventListener('error', e => {
-      statusEl.textContent = 'Ошибка распознавания: ' + e.error;
-      startBtn.disabled = false;
-      listening = false;
-      startBtn.textContent = 'Начать';
-      startBtn.setAttribute('aria-pressed', 'false');
+    recognition.addEventListener('result', (event) => {
+      if (!event.results || event.results.length === 0) {
+        statusEl.textContent = 'Не распознано. Попробуйте ещё раз.';
+        return;
+      }
+      // Берём последний результат
+      const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+
+      // Игнорируем слишком короткие результаты
+      if (transcript.length < 1) return;
+
+      statusEl.textContent = `Вы сказали: "${transcript}"`;
+
+      const userAnswer = parseSpokenNumber(transcript);
+      if (userAnswer === null) {
+        hintEl.textContent = 'Не удалось распознать число. Попробуйте сказать цифры или числа словами от нуля до девяти.';
+        return;
+      }
+      if (userAnswer === currentAnswer) {
+        hintEl.textContent = '';
+        playShotAndExplosionAndNext();
+      } else {
+        hintEl.textContent = `Неверно. Попробуйте ещё раз.`;
+      }
     });
+
     recognition.addEventListener('end', () => {
       if (listening) {
-        recognition.start();
+        // Задержка перед повторным стартом
+        setTimeout(() => {
+          try {
+            recognition.start();
+            statusEl.textContent = 'Слушаю... Говорите ответ';
+          } catch (e) {
+            // Игнорируем ошибку, если start вызван слишком быстро
+          }
+        }, 400);
+      }
+    });
+
+    recognition.addEventListener('error', (e) => {
+      if (e.error === 'no-speech') {
+        statusEl.textContent = 'Не было речи. Пожалуйста, говорите громче и чётче.';
+      } else if (e.error === 'audio-capture') {
+        statusEl.textContent = 'Не найден микрофон. Проверьте разрешения.';
+      } else if (e.error === 'not-allowed') {
+        statusEl.textContent = 'Доступ к микрофону запрещён.';
+        stopListening();
+      } else {
+        statusEl.textContent = 'Ошибка распознавания: ' + e.error;
       }
     });
   }
