@@ -2,57 +2,69 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>Голосная арифметика (однозначные числа)</title>
 <style>
-  body {
+  html, body {
     margin: 0; padding: 0;
+    height: 100%;
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     background: #121212;
     color: #eee;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100vh;
     user-select: none;
+    padding: 1rem;
   }
   #container {
     background: #222;
-    padding: 30px 40px;
+    padding: 2rem 2.5rem;
     border-radius: 15px;
     box-shadow: 0 0 20px #0f9d58;
     text-align: center;
-    width: 320px;
-    max-width: 90vw;
+    width: 100%;
+    max-width: 400px;
+    box-sizing: border-box;
   }
   #problem {
     font-size: 4rem;
     font-weight: 700;
-    margin-bottom: 20px;
+    margin-bottom: 1.5rem;
     user-select: none;
     transition: transform 0.8s ease, opacity 0.8s ease;
+    min-height: 4.5rem;
   }
   #status {
     font-size: 1.2rem;
-    min-height: 30px;
-    margin-bottom: 20px;
+    min-height: 1.5rem;
+    margin-bottom: 1.5rem;
     color: #0f9d58;
+    font-weight: 600;
+    min-height: 1.5em;
   }
   #start-btn {
-    font-size: 1.2rem;
-    padding: 12px 25px;
+    font-size: 1.5rem;
+    padding: 14px 30px;
     border: none;
-    border-radius: 10px;
+    border-radius: 12px;
     background: #0f9d58;
     color: #fff;
     cursor: pointer;
     user-select: none;
-    box-shadow: 0 0 10px #0f9d58;
-    transition: background-color 0.3s ease;
+    box-shadow: 0 0 15px #0f9d58;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    width: 100%;
+    max-width: 320px;
   }
-  #start-btn:hover:not(:disabled) {
+  #start-btn:hover:not(:disabled),
+  #start-btn:focus-visible {
     background: #0c7a43;
+    outline-offset: 3px;
+    outline: 3px solid #4caf50;
   }
   #start-btn:disabled {
     background: #555;
@@ -61,9 +73,10 @@
   }
   #hint {
     color: #f44336;
-    min-height: 24px;
-    margin-top: 10px;
+    min-height: 1.4em;
+    margin-top: 0.8rem;
     font-weight: 600;
+    min-height: 1.4em;
   }
   @keyframes explode {
     0% {
@@ -89,11 +102,11 @@
 </head>
 <body>
 
-<div id="container">
-  <div id="problem">—</div>
-  <div id="status">Нажмите кнопку и скажите ответ</div>
-  <button id="start-btn">Начать</button>
-  <div id="hint"></div>
+<div id="container" role="main" aria-label="Голосная арифметическая игра">
+  <div id="problem" aria-live="polite" aria-atomic="true">—</div>
+  <div id="status" aria-live="polite" aria-atomic="true">Нажмите кнопку и скажите ответ</div>
+  <button id="start-btn" aria-pressed="false" aria-label="Начать или остановить распознавание речи">Начать</button>
+  <div id="hint" aria-live="assertive" aria-atomic="true"></div>
 </div>
 
 <!-- Звуки: выстрел и взрыв -->
@@ -118,7 +131,6 @@
     const minNumber = 1;
     const maxNumber = 9;
 
-    // Выбор операции
     const op = Math.random() < 0.5 ? '+' : '-';
 
     let a, b;
@@ -161,14 +173,19 @@
     statusEl.textContent = 'Слушаю... Говорите ответ';
     hintEl.textContent = '';
     recognition.start();
-    startBtn.disabled = true;
+    startBtn.textContent = 'Остановить';
+    startBtn.setAttribute('aria-pressed', 'true');
+    startBtn.disabled = false;
   }
 
   function stopListening() {
     if (!recognition) return;
     listening = false;
     recognition.stop();
+    startBtn.textContent = 'Начать';
+    startBtn.setAttribute('aria-pressed', 'false');
     startBtn.disabled = false;
+    statusEl.textContent = 'Распознавание остановлено.';
   }
 
   function handleResult(event) {
@@ -179,7 +196,7 @@
     }
     const transcript = event.results[0][0].transcript.trim().toLowerCase();
     statusEl.textContent = `Вы сказали: "${transcript}"`;
-    // Парсим число из речи
+
     const userAnswer = parseSpokenNumber(transcript);
     if (userAnswer === null) {
       hintEl.textContent = 'Не удалось распознать число. Попробуйте сказать цифры или числа словами от нуля до девяти.';
@@ -187,7 +204,6 @@
       return;
     }
     if (userAnswer === currentAnswer) {
-      // Правильно!
       hintEl.textContent = '';
       playShotAndExplosionAndNext();
     } else {
@@ -200,7 +216,6 @@
   function parseSpokenNumber(str) {
     str = str.trim().toLowerCase();
 
-    // Словарь числительных 0–9
     const numbersMap = {
       'ноль': 0,
       'один': 1,
@@ -216,37 +231,33 @@
       'девять': 9,
     };
 
-    // Попытка извлечь число из цифр (например, "7", "12" и т.п.)
     const numFromDigits = Number(str.replace(/[^\d\-]/g, ''));
     if (!Number.isNaN(numFromDigits) && str.match(/\d/)) {
       return numFromDigits;
     }
 
-    // Если слово есть в словаре — вернуть число
     if (numbersMap.hasOwnProperty(str)) {
       return numbersMap[str];
     }
 
-    return null; // не распознано
+    return null;
   }
 
   function playShotAndExplosionAndNext() {
-    // Проигрываем выстрел
     shotSound.currentTime = 0;
     shotSound.play();
 
-    // Через 300 мс запускаем анимацию и звук взрыва
     setTimeout(() => {
       explosionSound.currentTime = 0;
       explosionSound.play();
       problemEl.classList.add('explode');
     }, 300);
 
-    // После анимации сменить пример
     setTimeout(() => {
       problemEl.classList.remove('explode');
       nextProblem();
       statusEl.textContent = 'Нажмите кнопку и скажите ответ';
+      hintEl.textContent = '';
       startBtn.disabled = false;
     }, 1200);
   }
@@ -259,11 +270,8 @@
   startBtn.addEventListener('click', () => {
     if (listening) {
       stopListening();
-      statusEl.textContent = 'Распознавание остановлено.';
-      startBtn.textContent = 'Начать';
     } else {
       startListening();
-      startBtn.textContent = 'Остановить';
     }
   });
 
@@ -275,6 +283,7 @@
       startBtn.disabled = false;
       listening = false;
       startBtn.textContent = 'Начать';
+      startBtn.setAttribute('aria-pressed', 'false');
     });
     recognition.addEventListener('end', () => {
       if (listening) {
